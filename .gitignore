@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+
+# Poetry / build
+.build/
+dist/
+*.egg-info/
+.pytest_cache/
+
+# Docker
+**/node_modules
+**/dist
+**/.parcel-cache
+**/build
+**/.turbo
+.DS_Store
+
+# VSCode
+.vscode/
+
+# Logs
+*.log

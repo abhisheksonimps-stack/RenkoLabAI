@@ -1,0 +1,16 @@
+repos:
+  - repo: https://github.com/psf/black
+    rev: 24.12.0
+    hooks:
+      - id: black
+        language_version: python3.13
+  - repo: https://github.com/pycqa/ruff-prettier
+    rev: v0.0.303
+    hooks:
+      - id: ruff
+        args: ["check", "backend"]
+  - repo: https://github.com/pre-commit/mirrors-isort
+    rev: v5.12.0
+    hooks:
+      - id: isort
+
