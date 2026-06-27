@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import math
 from typing import Any, Callable, Dict, List, Optional
 
-from backend.app.chart.renko.configuration import BrickConfiguration
+from backend.app.chart.renko.configuration import (
+    BrickConfiguration,
+    ReferencePrice,
+    RoundingMode,
+)
 from backend.app.chart.renko.exceptions import RenkoConfigurationError
 from backend.app.chart.renko.interfaces import BrickSizeProvider
 
@@ -150,6 +155,154 @@ class ATRBrickSizeProvider(BrickSizeProvider):
         return self._atr_multiplier
 
 
+def _coerce_reference_price(value: Any) -> ReferencePrice:
+    if isinstance(value, ReferencePrice):
+        return value
+    return ReferencePrice(value)
+
+
+def _coerce_rounding_mode(value: Any) -> RoundingMode:
+    if isinstance(value, RoundingMode):
+        return value
+    return RoundingMode(value)
+
+
+def _select_reference_price(candle: Any, source: ReferencePrice) -> float:
+    """Pick the reference price from a candle for the given source.
+
+    ``typical_price`` = (high + low + close) / 3, ``median_price`` = (high + low) / 2.
+    Direct sources fall back to close when a feed omits that field so sizing
+    stays well-defined and deterministic.
+    """
+    if not hasattr(candle, "get"):
+        raise TypeError("Provider candle must be a mapping with price fields")
+    close = candle.get("close")
+    if close is None:
+        for key in ("open", "high", "low"):
+            if candle.get(key) is not None:
+                close = candle.get(key)
+                break
+    if close is None:
+        raise ValueError("Provider candle must contain at least one price field")
+    close = float(close)
+    high = float(candle.get("high", close))
+    low = float(candle.get("low", close))
+    open_ = float(candle.get("open", close))
+
+    if source == ReferencePrice.CLOSE:
+        return close
+    if source == ReferencePrice.OPEN:
+        return open_
+    if source == ReferencePrice.HIGH:
+        return high
+    if source == ReferencePrice.LOW:
+        return low
+    if source == ReferencePrice.TYPICAL_PRICE:
+        return (high + low + close) / 3.0
+    if source == ReferencePrice.MEDIAN_PRICE:
+        return (high + low) / 2.0
+    raise ValueError(f"Unsupported reference price: {source}")
+
+
+class PercentageBrickSizeProvider(BrickSizeProvider):
+    """Brick size as a percentage of a reference price.
+
+    ``size = reference_price * (percentage / 100)`` recomputed each candle in
+    O(1) time with O(1) memory. There is no historical recalculation: only the
+    size used for *future* bricks changes; already-generated bricks are
+    immutable. Pure arithmetic with no randomness or wall-clock dependence, so
+    replay is deterministic.
+    """
+
+    name = "percentage"
+
+    def __init__(
+        self,
+        percentage: float,
+        reference_price: ReferencePrice = ReferencePrice.CLOSE,
+        rounding_mode: RoundingMode = RoundingMode.NONE,
+        minimum_brick_size: Optional[float] = None,
+    ) -> None:
+        if percentage is None or percentage <= 0:
+            raise RenkoConfigurationError("Percentage must be positive")
+        if percentage > 100:
+            raise RenkoConfigurationError("Percentage must be <= 100")
+        if minimum_brick_size is not None and minimum_brick_size <= 0:
+            raise RenkoConfigurationError("Minimum brick size must be positive")
+        self._percentage = float(percentage)
+        self._reference_price = _coerce_reference_price(reference_price)
+        self._rounding_mode = _coerce_rounding_mode(rounding_mode)
+        self._minimum_brick_size = (
+            float(minimum_brick_size) if minimum_brick_size is not None else None
+        )
+        self._current_size: Optional[float] = None
+
+    @classmethod
+    def from_configuration(cls, configuration: BrickConfiguration) -> "PercentageBrickSizeProvider":
+        return cls(
+            percentage=configuration.percentage,
+            reference_price=configuration.reference_price,
+            rounding_mode=configuration.rounding_mode,
+            minimum_brick_size=configuration.minimum_brick_size,
+        )
+
+    def _apply_rounding(self, size: float) -> float:
+        if self._rounding_mode == RoundingMode.NONE:
+            return size
+        if self._rounding_mode == RoundingMode.FLOOR:
+            return float(math.floor(size))
+        if self._rounding_mode == RoundingMode.CEIL:
+            return float(math.ceil(size))
+        if self._rounding_mode == RoundingMode.ROUND:
+            # Deterministic round-half-up (avoids banker's rounding surprises).
+            return float(math.floor(size + 0.5))
+        raise ValueError(f"Unsupported rounding mode: {self._rounding_mode}")
+
+    def update(self, candle: Any) -> None:
+        reference = _select_reference_price(candle, self._reference_price)
+        raw = reference * (self._percentage / 100.0)
+        size = self._apply_rounding(raw)
+        if self._minimum_brick_size is not None:
+            size = max(size, self._minimum_brick_size)
+        # Never emit a non-positive size (rounding can floor a tiny size to 0);
+        # fall back to the exact unrounded value, which is positive for a
+        # positive reference price.
+        if size <= 0:
+            size = raw
+        if size <= 0:
+            # Reference price was non-positive (degenerate data); stay un-ready.
+            return
+        self._current_size = size
+
+    def current_size(self) -> float:
+        if self._current_size is None:
+            raise RuntimeError("Percentage provider is not ready; no candle seen yet")
+        return self._current_size
+
+    def ready(self) -> bool:
+        return self._current_size is not None
+
+    def reset(self) -> None:
+        self._current_size = None
+
+    # Introspection helpers (tests / diagnostics; not part of the engine path).
+    @property
+    def percentage(self) -> float:
+        return self._percentage
+
+    @property
+    def reference_price(self) -> ReferencePrice:
+        return self._reference_price
+
+    @property
+    def rounding_mode(self) -> RoundingMode:
+        return self._rounding_mode
+
+    @property
+    def minimum_brick_size(self) -> Optional[float]:
+        return self._minimum_brick_size
+
+
 class BrickSizeProviderRegistry:
     """Registry of brick-size provider factories, keyed by name.
 
@@ -188,4 +341,5 @@ def default_provider_registry() -> BrickSizeProviderRegistry:
     registry = BrickSizeProviderRegistry()
     registry.register("fixed", FixedBrickSizeProvider.from_configuration)
     registry.register("atr", ATRBrickSizeProvider.from_configuration)
+    registry.register("percentage", PercentageBrickSizeProvider.from_configuration)
     return registry

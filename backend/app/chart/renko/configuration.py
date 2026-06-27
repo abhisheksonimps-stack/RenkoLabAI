@@ -21,6 +21,26 @@ class RenkoMode(str, Enum):
     BACKTEST = "backtest"
 
 
+class ReferencePrice(str, Enum):
+    """Price a percentage provider sizes bricks against."""
+
+    CLOSE = "close"
+    OPEN = "open"
+    HIGH = "high"
+    LOW = "low"
+    TYPICAL_PRICE = "typical_price"
+    MEDIAN_PRICE = "median_price"
+
+
+class RoundingMode(str, Enum):
+    """How a computed brick size is rounded."""
+
+    NONE = "none"
+    ROUND = "round"
+    FLOOR = "floor"
+    CEIL = "ceil"
+
+
 @dataclass(frozen=True)
 class BrickConfiguration:
     brick_type: BrickType
@@ -31,6 +51,9 @@ class BrickConfiguration:
     atr_multiplier: Optional[float] = None
     provider: Optional[str] = None
     percentage: Optional[float] = None
+    reference_price: ReferencePrice = ReferencePrice.CLOSE
+    minimum_brick_size: Optional[float] = None
+    rounding_mode: RoundingMode = RoundingMode.NONE
     mean_lookback: Optional[int] = None
     median_lookback: Optional[int] = None
     hybrid_weight: Optional[float] = None
@@ -48,4 +71,6 @@ class BrickConfiguration:
             return self.provider
         if self.brick_type == BrickType.ATR:
             return "atr"
+        if self.brick_type == BrickType.PERCENTAGE:
+            return "percentage"
         return "fixed"

@@ -1,4 +1,10 @@
-from .configuration import BrickConfiguration, PriceSource, RenkoMode
+from .configuration import (
+    BrickConfiguration,
+    PriceSource,
+    ReferencePrice,
+    RenkoMode,
+    RoundingMode,
+)
 from .exceptions import (
     InvalidBrickSize,
     RenkoConfigurationError,
@@ -24,6 +30,7 @@ from .providers import (
     ATRBrickSizeProvider,
     BrickSizeProviderRegistry,
     FixedBrickSizeProvider,
+    PercentageBrickSizeProvider,
     default_provider_registry,
 )
 from .registry import RenkoRegistry
@@ -41,6 +48,8 @@ __all__ = [
     "BrickType",
     "BrickConfiguration",
     "PriceSource",
+    "ReferencePrice",
+    "RoundingMode",
     "RenkoMode",
     "RenkoRegistry",
     "RenkoFactory",
@@ -48,6 +57,7 @@ __all__ = [
     "RenkoPlugin",
     "FixedBrickSizeProvider",
     "ATRBrickSizeProvider",
+    "PercentageBrickSizeProvider",
     "BrickSizeProviderRegistry",
     "default_provider_registry",
     "BrickOpened",

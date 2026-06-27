@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.app.chart.renko.configuration import BrickConfiguration, BrickType, PriceSource, RenkoMode
+from backend.app.chart.renko.configuration import (
+    BrickConfiguration,
+    BrickType,
+    PriceSource,
+    ReferencePrice,
+    RenkoMode,
+    RoundingMode,
+)
 from backend.app.chart.renko.exceptions import (
     InvalidBrickSize,
     RenkoConfigurationError,
@@ -38,6 +45,29 @@ class DefaultBrickValidator(BrickValidator):
         if configuration.brick_type == BrickType.PERCENTAGE:
             if configuration.percentage is None or configuration.percentage <= 0:
                 raise RenkoConfigurationError("Percentage must be positive")
+
+        if configuration.resolved_provider() == "percentage":
+            if configuration.percentage is None or configuration.percentage <= 0:
+                raise RenkoConfigurationError("Percentage must be positive")
+            if configuration.percentage > 100:
+                raise RenkoConfigurationError("Percentage must be <= 100")
+            if (
+                configuration.minimum_brick_size is not None
+                and configuration.minimum_brick_size <= 0
+            ):
+                raise RenkoConfigurationError("Minimum brick size must be positive")
+            try:
+                ReferencePrice(configuration.reference_price)
+            except ValueError:
+                raise RenkoConfigurationError(
+                    f"Unsupported reference price: {configuration.reference_price}"
+                )
+            try:
+                RoundingMode(configuration.rounding_mode)
+            except ValueError:
+                raise RenkoConfigurationError(
+                    f"Unsupported rounding mode: {configuration.rounding_mode}"
+                )
 
         if configuration.brick_type == BrickType.MEAN:
             if configuration.mean_lookback is None or configuration.mean_lookback <= 0:
