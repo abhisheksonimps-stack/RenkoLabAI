@@ -23,7 +23,13 @@ from .events import (
     RenkoEngineStopped,
 )
 from .factory import RenkoFactory
-from .interfaces import BrickBuilder, BrickSizeProvider, BrickValidator, RenkoEngine
+from .interfaces import (
+    BrickBuilder,
+    BrickSizeProvider,
+    BrickValidator,
+    PriceReferenceStrategy,
+    RenkoEngine,
+)
 from .models import Brick, BrickDirection, BrickSnapshot, BrickState, BrickType
 from .plugin import RenkoPlugin
 from .providers import (
@@ -33,12 +39,25 @@ from .providers import (
     PercentageBrickSizeProvider,
     default_provider_registry,
 )
+from .strategies import (
+    ClosePriceStrategy,
+    HighPriceStrategy,
+    LowPriceStrategy,
+    MeanPriceStrategy,
+    MedianPriceStrategy,
+    OpenPriceStrategy,
+    PriceReferenceStrategyFactory,
+    PriceReferenceStrategyRegistry,
+    TypicalPriceStrategy,
+    default_strategy_registry,
+)
 from .registry import RenkoRegistry
 from .validator import DefaultBrickValidator
 
 __all__ = [
     "BrickBuilder",
     "BrickSizeProvider",
+    "PriceReferenceStrategy",
     "BrickValidator",
     "RenkoEngine",
     "Brick",
@@ -60,6 +79,16 @@ __all__ = [
     "PercentageBrickSizeProvider",
     "BrickSizeProviderRegistry",
     "default_provider_registry",
+    "ClosePriceStrategy",
+    "OpenPriceStrategy",
+    "HighPriceStrategy",
+    "LowPriceStrategy",
+    "TypicalPriceStrategy",
+    "MeanPriceStrategy",
+    "MedianPriceStrategy",
+    "PriceReferenceStrategyRegistry",
+    "PriceReferenceStrategyFactory",
+    "default_strategy_registry",
     "BrickOpened",
     "BrickClosed",
     "BrickExtended",

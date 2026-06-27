@@ -9,7 +9,11 @@ from backend.app.chart.renko.configuration import (
     RoundingMode,
 )
 from backend.app.chart.renko.exceptions import RenkoConfigurationError
-from backend.app.chart.renko.interfaces import BrickSizeProvider
+from backend.app.chart.renko.interfaces import BrickSizeProvider, PriceReferenceStrategy
+from backend.app.chart.renko.strategies import (
+    ClosePriceStrategy,
+    strategy_for_reference_price,
+)
 
 # A factory turns a configuration into a fresh provider instance. Providers hold
 # rolling state, so a registry stores *factories* (not shared instances): every
@@ -219,7 +223,8 @@ class PercentageBrickSizeProvider(BrickSizeProvider):
     def __init__(
         self,
         percentage: float,
-        reference_price: ReferencePrice = ReferencePrice.CLOSE,
+        strategy: Optional[PriceReferenceStrategy] = None,
+        reference_price: Optional[ReferencePrice] = None,
         rounding_mode: RoundingMode = RoundingMode.NONE,
         minimum_brick_size: Optional[float] = None,
     ) -> None:
@@ -230,7 +235,22 @@ class PercentageBrickSizeProvider(BrickSizeProvider):
         if minimum_brick_size is not None and minimum_brick_size <= 0:
             raise RenkoConfigurationError("Minimum brick size must be positive")
         self._percentage = float(percentage)
-        self._reference_price = _coerce_reference_price(reference_price)
+        # Price selection is delegated to a PriceReferenceStrategy. An explicit
+        # strategy wins; otherwise we derive one from the legacy 6D
+        # ``reference_price`` enum; otherwise default to close.
+        if strategy is not None:
+            self._strategy: PriceReferenceStrategy = strategy
+            self._reference_price = (
+                _coerce_reference_price(reference_price)
+                if reference_price is not None
+                else None
+            )
+        elif reference_price is not None:
+            self._reference_price = _coerce_reference_price(reference_price)
+            self._strategy = strategy_for_reference_price(self._reference_price)
+        else:
+            self._reference_price = ReferencePrice.CLOSE
+            self._strategy = ClosePriceStrategy()
         self._rounding_mode = _coerce_rounding_mode(rounding_mode)
         self._minimum_brick_size = (
             float(minimum_brick_size) if minimum_brick_size is not None else None
@@ -239,12 +259,26 @@ class PercentageBrickSizeProvider(BrickSizeProvider):
 
     @classmethod
     def from_configuration(cls, configuration: BrickConfiguration) -> "PercentageBrickSizeProvider":
+        # Resolve the strategy from the built-in registry; the RenkoFactory may
+        # later override it with a DI/plugin-extended registry via
+        # ``set_price_reference_strategy``.
+        from backend.app.chart.renko.strategies import default_strategy_registry
+
+        strategy = default_strategy_registry().create(configuration)
         return cls(
             percentage=configuration.percentage,
-            reference_price=configuration.reference_price,
+            strategy=strategy,
             rounding_mode=configuration.rounding_mode,
             minimum_brick_size=configuration.minimum_brick_size,
         )
+
+    def set_price_reference_strategy(self, strategy: PriceReferenceStrategy) -> None:
+        """Inject the price-reference strategy this provider sizes against."""
+        self._strategy = strategy
+
+    @property
+    def strategy(self) -> PriceReferenceStrategy:
+        return self._strategy
 
     def _apply_rounding(self, size: float) -> float:
         if self._rounding_mode == RoundingMode.NONE:
@@ -259,7 +293,7 @@ class PercentageBrickSizeProvider(BrickSizeProvider):
         raise ValueError(f"Unsupported rounding mode: {self._rounding_mode}")
 
     def update(self, candle: Any) -> None:
-        reference = _select_reference_price(candle, self._reference_price)
+        reference = self._strategy.reference_price(candle)
         raw = reference * (self._percentage / 100.0)
         size = self._apply_rounding(raw)
         if self._minimum_brick_size is not None:

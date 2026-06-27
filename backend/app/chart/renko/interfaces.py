@@ -38,6 +38,19 @@ class RenkoEngine(ABC):
         raise NotImplementedError
 
 
+class PriceReferenceStrategy(ABC):
+    """Selects a single reference price from one candle.
+
+    Stateless and side-effect free: given one candle it returns one price and
+    owns nothing else (no brick logic, no ATR, no percentage maths, no history).
+    This keeps price selection independently extensible from sizing.
+    """
+
+    @abstractmethod
+    def reference_price(self, candle: Any) -> float:
+        raise NotImplementedError
+
+
 class BrickSizeProvider(ABC):
     """Abstraction that owns brick-size calculation.
 

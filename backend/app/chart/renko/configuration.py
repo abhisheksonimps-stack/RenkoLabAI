@@ -52,6 +52,7 @@ class BrickConfiguration:
     provider: Optional[str] = None
     percentage: Optional[float] = None
     reference_price: ReferencePrice = ReferencePrice.CLOSE
+    reference_price_strategy: Optional[str] = None
     minimum_brick_size: Optional[float] = None
     rounding_mode: RoundingMode = RoundingMode.NONE
     mean_lookback: Optional[int] = None
@@ -74,3 +75,24 @@ class BrickConfiguration:
         if self.brick_type == BrickType.PERCENTAGE:
             return "percentage"
         return "fixed"
+
+    def resolved_reference_strategy(self) -> str:
+        """Resolve the price-reference strategy name.
+
+        Precedence: the explicit ``reference_price_strategy`` wins; otherwise we
+        fall back to the Sprint 6D ``reference_price`` enum (default ``close``),
+        keeping older percentage configs working unchanged.
+        """
+        if self.reference_price_strategy:
+            return self.reference_price_strategy
+        mapping = {
+            ReferencePrice.CLOSE: "close",
+            ReferencePrice.OPEN: "open",
+            ReferencePrice.HIGH: "high",
+            ReferencePrice.LOW: "low",
+            ReferencePrice.TYPICAL_PRICE: "typical",
+            ReferencePrice.MEDIAN_PRICE: "median",
+        }
+        if self.reference_price is not None:
+            return mapping[ReferencePrice(self.reference_price)]
+        return "close"

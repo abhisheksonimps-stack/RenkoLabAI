@@ -7,6 +7,7 @@ from backend.app.chart.registry import ChartRegistry
 from backend.app.chart.renko.factory import RenkoFactory
 from backend.app.chart.renko.registry import RenkoRegistry
 from backend.app.chart.renko.providers import default_provider_registry
+from backend.app.chart.renko.strategies import default_strategy_registry
 from backend.app.chart.renko.validator import DefaultBrickValidator
 
 
@@ -24,13 +25,17 @@ class Container(containers.DeclarativeContainer):
     chart_registry = providers.Singleton(ChartRegistry)
     renko_registry = providers.Singleton(RenkoRegistry)
     brick_size_provider_registry = providers.Singleton(default_provider_registry)
+    price_reference_strategy_registry = providers.Singleton(default_strategy_registry)
     renko_validator = providers.Singleton(
-        DefaultBrickValidator, provider_registry=brick_size_provider_registry
+        DefaultBrickValidator,
+        provider_registry=brick_size_provider_registry,
+        strategy_registry=price_reference_strategy_registry,
     )
     renko_factory = providers.Factory(
         RenkoFactory,
         registry=renko_registry,
         provider_registry=brick_size_provider_registry,
+        strategy_registry=price_reference_strategy_registry,
     )
 
     wiring_config = containers.WiringConfiguration(packages=["backend.app.api"])
