@@ -11,6 +11,7 @@ from backend.app.chart.registry import ChartRegistry
 from backend.app.chart.renko.registry import RenkoRegistry
 from backend.app.chart.renko.providers import BrickSizeProviderRegistry
 from backend.app.chart.renko.strategies import PriceReferenceStrategyRegistry
+from backend.app.chart.renko.builder import BrickBuilderRegistry
 from backend.app.events.bus import EventBus
 from backend.app.plugins.base import PluginInterface
 
@@ -26,6 +27,7 @@ class PluginManager:
         renko_registry: Optional[RenkoRegistry] = None,
         provider_registry: Optional[BrickSizeProviderRegistry] = None,
         strategy_registry: Optional[PriceReferenceStrategyRegistry] = None,
+        builder_registry: Optional[BrickBuilderRegistry] = None,
     ) -> None:
         self.plugin_directory = plugin_directory
         self.event_bus = event_bus
@@ -33,6 +35,7 @@ class PluginManager:
         self.renko_registry = renko_registry
         self.provider_registry = provider_registry
         self.strategy_registry = strategy_registry
+        self.builder_registry = builder_registry
         self._plugins: Dict[str, PluginInterface] = {}
 
     def discover(self) -> List[Path]:
@@ -62,6 +65,7 @@ class PluginManager:
             await self._register_plugin_renko_engines(plugin)
             await self._register_plugin_brick_size_providers(plugin)
             await self._register_plugin_price_reference_strategies(plugin)
+            await self._register_plugin_brick_builders(plugin)
             self._plugins[plugin.name] = plugin
 
     async def _register_plugin_charts(self, plugin: PluginInterface) -> None:
@@ -109,6 +113,18 @@ class PluginManager:
             return
 
         result = register_method(self.strategy_registry)
+        if inspect.isawaitable(result):
+            await result
+
+    async def _register_plugin_brick_builders(self, plugin: PluginInterface) -> None:
+        if self.builder_registry is None:
+            return
+
+        register_method = getattr(plugin, "register_brick_builders", None)
+        if register_method is None or not callable(register_method):
+            return
+
+        result = register_method(self.builder_registry)
         if inspect.isawaitable(result):
             await result
 

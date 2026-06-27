@@ -1,3 +1,4 @@
+from .builder import BrickBuilderRegistry, TraditionalBrickBuilder, default_builder_registry
 from .configuration import (
     BrickConfiguration,
     PriceSource,
@@ -56,6 +57,9 @@ from .validator import DefaultBrickValidator
 
 __all__ = [
     "BrickBuilder",
+    "TraditionalBrickBuilder",
+    "BrickBuilderRegistry",
+    "default_builder_registry",
     "BrickSizeProvider",
     "PriceReferenceStrategy",
     "BrickValidator",

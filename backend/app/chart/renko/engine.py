@@ -24,11 +24,15 @@ class TraditionalRenkoEngine(RenkoEngine):
         self,
         event_bus: EventBus | None = None,
         provider: BrickSizeProvider | None = None,
+        builder: BrickBuilder | None = None,
     ) -> None:
         self._event_bus = event_bus
         self._configuration: BrickConfiguration | None = None
         self._state: BrickState | None = None
-        self._builder: BrickBuilder = TraditionalBrickBuilder()
+        # The engine depends on the BrickBuilder abstraction, not the concrete
+        # class. When none is injected we default to the Traditional builder so
+        # behaviour is unchanged.
+        self._builder: BrickBuilder = builder if builder is not None else TraditionalBrickBuilder()
         self._brick_history: deque[Brick] = deque()
         self._pending_open_price: float | None = None
         self._last_brick_boundary: float | None = None
@@ -44,6 +48,14 @@ class TraditionalRenkoEngine(RenkoEngine):
             self._event_bus.register_event(BrickExtended)
             self._event_bus.register_event(BrickReversed)
             self._event_bus.register_event(BrickSizeUpdated)
+
+    def set_brick_builder(self, builder: BrickBuilder) -> None:
+        """Inject the brick builder the engine should use (via the interface)."""
+        self._builder = builder
+
+    @property
+    def builder(self) -> BrickBuilder:
+        return self._builder
 
     def set_brick_size_provider(self, provider: BrickSizeProvider) -> None:
         """Inject the brick-size provider the engine should use (black box)."""

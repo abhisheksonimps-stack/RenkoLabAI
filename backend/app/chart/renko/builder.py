@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable, Dict, List
 
 from backend.app.chart.renko.configuration import BrickConfiguration
 from backend.app.chart.renko.interfaces import BrickBuilder
@@ -43,3 +43,50 @@ class TraditionalBrickBuilder(BrickBuilder):
                 "price_source": configuration.price_source.value,
             },
         )
+
+
+# Same architectural style as BrickSizeProviderFactory / PriceReferenceStrategyFactory:
+# a factory turns a configuration into a builder instance. Builders are stateless
+# (a pure market_data -> Brick transform), so factories may return fresh
+# instances or singletons without affecting determinism.
+BrickBuilderFactory = Callable[[BrickConfiguration], BrickBuilder]
+
+
+class BrickBuilderRegistry:
+    """Registry of brick-builder factories, keyed by name.
+
+    Mirrors ``BrickSizeProviderRegistry`` and ``PriceReferenceStrategyRegistry``.
+    Plugins can register additional builders later via ``register`` without
+    changing engine code.
+    """
+
+    def __init__(self) -> None:
+        self._factories: Dict[str, BrickBuilderFactory] = {}
+
+    def register(self, name: str, factory: BrickBuilderFactory) -> None:
+        if name in self._factories:
+            raise ValueError(f"Builder already registered: {name}")
+        self._factories[name] = factory
+
+    def get(self, name: str) -> BrickBuilderFactory:
+        if name not in self._factories:
+            raise KeyError(f"Builder not registered: {name}")
+        return self._factories[name]
+
+    def exists(self, name: str) -> bool:
+        return name in self._factories
+
+    def names(self) -> List[str]:
+        return list(self._factories.keys())
+
+    def create(self, configuration: BrickConfiguration) -> BrickBuilder:
+        name = configuration.resolved_builder()
+        factory = self.get(name)
+        return factory(configuration)
+
+
+def default_builder_registry() -> BrickBuilderRegistry:
+    """Build a registry pre-populated with the built-in Traditional builder."""
+    registry = BrickBuilderRegistry()
+    registry.register("traditional", lambda configuration: TraditionalBrickBuilder())
+    return registry

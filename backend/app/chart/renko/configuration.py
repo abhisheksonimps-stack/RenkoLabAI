@@ -50,6 +50,7 @@ class BrickConfiguration:
     atr_period: Optional[int] = None
     atr_multiplier: Optional[float] = None
     provider: Optional[str] = None
+    builder: Optional[str] = None
     percentage: Optional[float] = None
     reference_price: ReferencePrice = ReferencePrice.CLOSE
     reference_price_strategy: Optional[str] = None
@@ -75,6 +76,15 @@ class BrickConfiguration:
         if self.brick_type == BrickType.PERCENTAGE:
             return "percentage"
         return "fixed"
+
+    def resolved_builder(self) -> str:
+        """Resolve the brick-builder name.
+
+        Backwards compatible: configurations that pre-date Sprint 6F do not set
+        ``builder``; they default to the Traditional builder, so behaviour is
+        unchanged.
+        """
+        return self.builder or "traditional"
 
     def resolved_reference_strategy(self) -> str:
         """Resolve the price-reference strategy name.
