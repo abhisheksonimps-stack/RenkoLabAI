@@ -42,6 +42,19 @@ class BrickValidationFailed(BaseEvent):
 
 
 @dataclass(frozen=True)
+class BrickSizeUpdated(BaseEvent):
+    """Published by the engine when the brick-size provider changes the size.
+
+    Provider-specific event (e.g. ATR re-estimates the size each candle). This
+    does not duplicate the existing brick lifecycle events.
+    """
+
+    configuration: BrickConfiguration
+    provider: str
+    brick_size: float
+
+
+@dataclass(frozen=True)
 class RenkoEngineStarted(BaseEvent):
     configuration: BrickConfiguration
 

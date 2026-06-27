@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from typing import Optional
+
+from backend.app.chart.renko.providers import BrickSizeProviderRegistry
 from backend.app.chart.renko.registry import RenkoRegistry
 from backend.app.plugins.base import PluginInterface
 
@@ -7,8 +10,13 @@ from backend.app.plugins.base import PluginInterface
 class RenkoPlugin(PluginInterface):
     name = "renko_plugin"
 
-    def __init__(self, renko_registry: RenkoRegistry) -> None:
+    def __init__(
+        self,
+        renko_registry: RenkoRegistry,
+        provider_registry: Optional[BrickSizeProviderRegistry] = None,
+    ) -> None:
         self.renko_registry = renko_registry
+        self.provider_registry = provider_registry
 
     async def load(self, event_bus=None) -> None:
         pass
@@ -23,4 +31,8 @@ class RenkoPlugin(PluginInterface):
         pass
 
     async def register_renko_engines(self, registry: RenkoRegistry) -> None:
+        pass
+
+    async def register_brick_size_providers(self, registry: BrickSizeProviderRegistry) -> None:
+        """Hook for plugins to register additional brick-size providers."""
         pass

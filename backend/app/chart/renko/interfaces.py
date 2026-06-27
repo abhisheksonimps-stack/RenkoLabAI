@@ -38,6 +38,36 @@ class RenkoEngine(ABC):
         raise NotImplementedError
 
 
+class BrickSizeProvider(ABC):
+    """Abstraction that owns brick-size calculation.
+
+    The engine treats a provider as a black box: it feeds completed candles
+    in via ``update`` and reads the current brick size via ``current_size``.
+    All state required to compute the size lives inside the provider so the
+    engine no longer owns brick-size calculation.
+    """
+
+    @abstractmethod
+    def update(self, candle: Any) -> None:
+        """Incorporate a completed candle into the provider's rolling state."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def current_size(self) -> float:
+        """Return the current brick size. Only valid when ``ready()`` is True."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def ready(self) -> bool:
+        """Return whether a brick size is available (e.g. warm-up complete)."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def reset(self) -> None:
+        """Completely clear provider state so replay is deterministic."""
+        raise NotImplementedError
+
+
 class BrickBuilder(ABC):
     @abstractmethod
     async def build_brick(self, market_data: Any, configuration: BrickConfiguration) -> "Brick":

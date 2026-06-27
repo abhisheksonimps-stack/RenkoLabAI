@@ -10,9 +10,15 @@ from backend.app.chart.renko.exceptions import (
     ValidationFailed,
 )
 from backend.app.chart.renko.interfaces import BrickValidator
+from backend.app.chart.renko.providers import BrickSizeProviderRegistry
 
 
 class DefaultBrickValidator(BrickValidator):
+    def __init__(self, provider_registry: BrickSizeProviderRegistry | None = None) -> None:
+        # Optional: when supplied, the validator can confirm that the configured
+        # provider actually exists in the registry.
+        self._provider_registry = provider_registry
+
     async def validate_configuration(self, configuration: BrickConfiguration) -> bool:
         if configuration.brick_size <= 0:
             raise InvalidBrickSize("Brick size must be positive")
@@ -26,6 +32,8 @@ class DefaultBrickValidator(BrickValidator):
         if configuration.brick_type == BrickType.ATR:
             if configuration.atr_period is None or configuration.atr_period <= 0:
                 raise RenkoConfigurationError("ATR period must be a positive integer")
+            if configuration.atr_multiplier is not None and configuration.atr_multiplier <= 0:
+                raise RenkoConfigurationError("ATR multiplier must be positive")
 
         if configuration.brick_type == BrickType.PERCENTAGE:
             if configuration.percentage is None or configuration.percentage <= 0:
@@ -46,6 +54,11 @@ class DefaultBrickValidator(BrickValidator):
         if configuration.brick_type == BrickType.AI:
             if not configuration.ai_model:
                 raise RenkoConfigurationError("AI model identifier must be provided for AI Renko")
+
+        if self._provider_registry is not None:
+            provider_name = configuration.resolved_provider()
+            if not self._provider_registry.exists(provider_name):
+                raise RenkoConfigurationError(f"Unknown brick-size provider: {provider_name}")
 
         return True
 

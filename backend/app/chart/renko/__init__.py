@@ -11,19 +11,27 @@ from .events import (
     BrickOpened,
     BrickExtended,
     BrickReversed,
+    BrickSizeUpdated,
     BrickValidationFailed,
     RenkoEngineStarted,
     RenkoEngineStopped,
 )
 from .factory import RenkoFactory
-from .interfaces import BrickBuilder, BrickValidator, RenkoEngine
+from .interfaces import BrickBuilder, BrickSizeProvider, BrickValidator, RenkoEngine
 from .models import Brick, BrickDirection, BrickSnapshot, BrickState, BrickType
 from .plugin import RenkoPlugin
+from .providers import (
+    ATRBrickSizeProvider,
+    BrickSizeProviderRegistry,
+    FixedBrickSizeProvider,
+    default_provider_registry,
+)
 from .registry import RenkoRegistry
 from .validator import DefaultBrickValidator
 
 __all__ = [
     "BrickBuilder",
+    "BrickSizeProvider",
     "BrickValidator",
     "RenkoEngine",
     "Brick",
@@ -38,10 +46,15 @@ __all__ = [
     "RenkoFactory",
     "DefaultBrickValidator",
     "RenkoPlugin",
+    "FixedBrickSizeProvider",
+    "ATRBrickSizeProvider",
+    "BrickSizeProviderRegistry",
+    "default_provider_registry",
     "BrickOpened",
     "BrickClosed",
     "BrickExtended",
     "BrickReversed",
+    "BrickSizeUpdated",
     "BrickValidationFailed",
     "RenkoEngineStarted",
     "RenkoEngineStopped",

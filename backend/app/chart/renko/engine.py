@@ -5,15 +5,26 @@ from datetime import datetime
 from typing import Any
 
 from backend.app.chart.renko.configuration import BrickConfiguration, PriceSource
-from backend.app.chart.renko.events import BrickClosed, BrickOpened, BrickReversed, BrickExtended
-from backend.app.chart.renko.interfaces import BrickBuilder, RenkoEngine
+from backend.app.chart.renko.events import (
+    BrickClosed,
+    BrickOpened,
+    BrickReversed,
+    BrickExtended,
+    BrickSizeUpdated,
+)
+from backend.app.chart.renko.interfaces import BrickBuilder, BrickSizeProvider, RenkoEngine
 from backend.app.chart.renko.models import Brick, BrickDirection, BrickSnapshot, BrickState
 from backend.app.events.bus import EventBus
 from backend.app.chart.renko.builder import TraditionalBrickBuilder
+from backend.app.chart.renko.providers import FixedBrickSizeProvider
 
 
 class TraditionalRenkoEngine(RenkoEngine):
-    def __init__(self, event_bus: EventBus | None = None) -> None:
+    def __init__(
+        self,
+        event_bus: EventBus | None = None,
+        provider: BrickSizeProvider | None = None,
+    ) -> None:
         self._event_bus = event_bus
         self._configuration: BrickConfiguration | None = None
         self._state: BrickState | None = None
@@ -21,11 +32,27 @@ class TraditionalRenkoEngine(RenkoEngine):
         self._brick_history: deque[Brick] = deque()
         self._pending_open_price: float | None = None
         self._last_brick_boundary: float | None = None
+        # Brick-size calculation is delegated to a provider. When none is
+        # injected we default to a FixedBrickSizeProvider at configure() time,
+        # preserving Sprint 6B behaviour exactly.
+        self._injected_provider: BrickSizeProvider | None = provider
+        self._provider: BrickSizeProvider | None = provider
+        self._last_published_size: float | None = None
 
         if self._event_bus is not None:
             self._event_bus.register_event(BrickOpened)
             self._event_bus.register_event(BrickExtended)
             self._event_bus.register_event(BrickReversed)
+            self._event_bus.register_event(BrickSizeUpdated)
+
+    def set_brick_size_provider(self, provider: BrickSizeProvider) -> None:
+        """Inject the brick-size provider the engine should use (black box)."""
+        self._injected_provider = provider
+        self._provider = provider
+
+    @property
+    def provider(self) -> BrickSizeProvider | None:
+        return self._provider
 
     @property
     def state(self) -> BrickState:
@@ -61,19 +88,34 @@ class TraditionalRenkoEngine(RenkoEngine):
         self._brick_history.clear()
         self._pending_open_price = None
         self._last_brick_boundary = None
+        self._last_published_size = None
+        if self._provider is not None:
+            self._provider.reset()
 
     async def process_market_data(self, market_data: Any) -> None:
         if self._configuration is None:
             raise RuntimeError("Engine has not been configured")
+        if self._provider is None:
+            raise RuntimeError("Engine has no brick-size provider")
         if self._state is None or not self._state.is_open:
             await self.start()
 
+        # 1. Feed the candle to the provider (it owns all brick-size state).
+        self._provider.update(market_data)
+
+        # 2. No size yet (e.g. ATR warm-up) -> generate no bricks.
+        if not self._provider.ready():
+            return
+
+        # 3. Read the current brick size from the provider.
+        brick_size = self._provider.current_size()
+        await self._maybe_publish_size_update(brick_size)
+
         candle_price = self._select_price(market_data, self._configuration.price_source)
         candle_timestamp = market_data["timestamp"]
-        brick_size = self._configuration.brick_size
 
         if self._pending_open_price is None:
-            self._initialize_first_brick(candle_price)
+            self._initialize_first_brick(candle_price, brick_size)
             return
 
         movements = self._generate_bricks_from_price(candle_price, candle_timestamp, brick_size)
@@ -89,6 +131,22 @@ class TraditionalRenkoEngine(RenkoEngine):
                 metadata={"last_brick_id": brick.brick_id},
             )
 
+    async def _maybe_publish_size_update(self, brick_size: float) -> None:
+        if self._event_bus is None:
+            return
+        if self._last_published_size is not None and brick_size == self._last_published_size:
+            return
+        self._last_published_size = brick_size
+        event = BrickSizeUpdated(
+            name=BrickSizeUpdated.__name__,
+            occurred_at=datetime.utcnow(),
+            payload={},
+            configuration=self._configuration,
+            provider=self._configuration.resolved_provider(),
+            brick_size=brick_size,
+        )
+        await self._event_bus.publish(event)
+
     async def get_snapshot(self) -> BrickSnapshot:
         if self._configuration is None or self._state is None:
             raise RuntimeError("Engine snapshot unavailable")
@@ -101,6 +159,13 @@ class TraditionalRenkoEngine(RenkoEngine):
 
     def configure(self, configuration: BrickConfiguration) -> None:
         self._configuration = configuration
+        # Prefer an injected provider (e.g. ATR from the factory); otherwise
+        # default to a fixed-size provider so legacy behaviour is unchanged.
+        if self._injected_provider is not None:
+            self._provider = self._injected_provider
+        else:
+            self._provider = FixedBrickSizeProvider(configuration.brick_size)
+        self._last_published_size = None
         self._state = BrickState(
             direction=BrickDirection.NEUTRAL,
             last_price=0.0,
@@ -125,13 +190,13 @@ class TraditionalRenkoEngine(RenkoEngine):
             return float((market_data["high"] + market_data["low"] + market_data["close"]) / 3.0)
         raise ValueError(f"Unsupported price source: {source}")
 
-    def _initialize_first_brick(self, price: float) -> None:
+    def _initialize_first_brick(self, price: float, brick_size: float) -> None:
         self._pending_open_price = price
         self._last_brick_boundary = price
         self._state = BrickState(
             direction=BrickDirection.NEUTRAL,
             last_price=price,
-            brick_size=self._configuration.brick_size,
+            brick_size=brick_size,
             is_open=True,
             metadata={"anchor_price": price},
         )

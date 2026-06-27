@@ -9,6 +9,7 @@ from backend.app.chart.renko.events import (
     BrickExtended,
     BrickOpened,
     BrickReversed,
+    BrickSizeUpdated,
     BrickValidationFailed,
     RenkoEngineStarted,
     RenkoEngineStopped,
@@ -33,6 +34,7 @@ class RenkoPipelineStage(PipelineStage):
         self.event_bus.register_event(BrickOpened)
         self.event_bus.register_event(BrickExtended)
         self.event_bus.register_event(BrickReversed)
+        self.event_bus.register_event(BrickSizeUpdated)
 
     @property
     def name(self) -> str:
