@@ -32,6 +32,7 @@ from backend.app.infrastructure.di import configure_container
 class DummyRenkoEngine(RenkoEngine):
     def __init__(self) -> None:
         self._state = BrickState(direction=BrickDirection.NEUTRAL, last_price=0.0, brick_size=1.0, is_open=False)
+        self._configuration = None
         self.processed = []
 
     @property
@@ -46,6 +47,9 @@ class DummyRenkoEngine(RenkoEngine):
 
     async def reset(self) -> None:
         self._state = BrickState(direction=BrickDirection.NEUTRAL, last_price=0.0, brick_size=self._state.brick_size, is_open=False)
+
+    def configure(self, configuration: BrickConfiguration) -> None:
+        self._configuration = configuration
 
     async def process_market_data(self, market_data: dict) -> None:
         self.processed.append(market_data)
@@ -173,6 +177,7 @@ from backend.app.chart.renko.models import BrickState, BrickDirection
 class DummyRenkoEngineImpl(RenkoEngine):
     def __init__(self) -> None:
         self._state = BrickState(direction=BrickDirection.NEUTRAL, last_price=0.0, brick_size=1.0, is_open=False)
+        self._configuration = None
 
     @property
     def state(self):
@@ -186,6 +191,9 @@ class DummyRenkoEngineImpl(RenkoEngine):
 
     async def reset(self) -> None:
         pass
+
+    def configure(self, configuration: BrickConfiguration) -> None:
+        self._configuration = configuration
 
     async def process_market_data(self, market_data: dict) -> None:
         pass

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from backend.app.chart.renko.configuration import BrickConfiguration, BrickType, PriceSource, RenkoMode
 from backend.app.chart.renko.exceptions import (
     InvalidBrickSize,

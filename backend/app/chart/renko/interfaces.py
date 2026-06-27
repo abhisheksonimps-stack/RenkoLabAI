@@ -26,6 +26,10 @@ class RenkoEngine(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def configure(self, configuration: BrickConfiguration) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     async def process_market_data(self, market_data: Any) -> None:
         raise NotImplementedError
 

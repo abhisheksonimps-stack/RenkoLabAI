@@ -11,6 +11,13 @@ class BrickDirection(str, Enum):
     DOWN = "down"
     NEUTRAL = "neutral"
 
+    def opposite(self) -> "BrickDirection":
+        if self == BrickDirection.UP:
+            return BrickDirection.DOWN
+        if self == BrickDirection.DOWN:
+            return BrickDirection.UP
+        return BrickDirection.NEUTRAL
+
 
 class BrickType(str, Enum):
     TRADITIONAL = "traditional"

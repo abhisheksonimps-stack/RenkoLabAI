@@ -5,7 +5,14 @@ from __future__ import annotations
 from datetime import datetime
 
 from backend.app.chart.renko.configuration import BrickConfiguration
-from backend.app.chart.renko.events import BrickValidationFailed, RenkoEngineStarted, RenkoEngineStopped
+from backend.app.chart.renko.events import (
+    BrickExtended,
+    BrickOpened,
+    BrickReversed,
+    BrickValidationFailed,
+    RenkoEngineStarted,
+    RenkoEngineStopped,
+)
 from backend.app.chart.renko.factory import RenkoFactory
 from backend.app.chart.renko.interfaces import BrickValidator
 from backend.app.events.bus import EventBus
@@ -23,6 +30,9 @@ class RenkoPipelineStage(PipelineStage):
         self.event_bus.register_event(RenkoEngineStarted)
         self.event_bus.register_event(RenkoEngineStopped)
         self.event_bus.register_event(BrickValidationFailed)
+        self.event_bus.register_event(BrickOpened)
+        self.event_bus.register_event(BrickExtended)
+        self.event_bus.register_event(BrickReversed)
 
     @property
     def name(self) -> str:
@@ -43,8 +53,11 @@ class RenkoPipelineStage(PipelineStage):
             return StageResult(stage_name=self.name, status=StageStatus.FAILED, context=context)
 
         engine = self.factory.create(configuration)
+        engine.configure(configuration)
         await self._publish_event(RenkoEngineStarted, configuration=configuration)
+        await engine.start()
         await engine.process_market_data(market_data)
+        await engine.stop()
         await self._publish_event(RenkoEngineStopped, configuration=configuration)
 
         context.set("renko_engine", engine)
