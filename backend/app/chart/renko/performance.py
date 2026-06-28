@@ -152,11 +152,36 @@ def hybrid_engine(size: float = 1.5) -> tuple[TraditionalRenkoEngine, BrickConfi
     return engine, cfg
 
 
+def adaptive_engine() -> tuple[TraditionalRenkoEngine, BrickConfiguration]:
+    """Adaptive provider (Fixed/Percentage/ATR by regime) — Sprint 6J benchmark.
+
+    Note: readiness requires the ATR child to warm up (atr_period candles), so
+    very small candle counts may yield few/no bricks initially."""
+    from backend.app.chart.renko.providers import AdaptiveBrickSizeProvider
+
+    cfg = BrickConfiguration(
+        brick_type=BrickType.TRADITIONAL,
+        provider="adaptive",
+        brick_size=1.5,
+        percentage=1.0,
+        atr_period=14,
+        atr_multiplier=0.75,
+        adaptive_window=14,
+        adaptive_thresholds=(1.0, 2.0),
+        adaptive_hysteresis=0.1,
+        mode=RenkoMode.REPLAY,
+    )
+    engine = TraditionalRenkoEngine(provider=AdaptiveBrickSizeProvider.from_configuration(cfg))
+    engine.configure(cfg)
+    return engine, cfg
+
+
 ENGINE_BUILDERS: Dict[str, Callable[[], tuple[TraditionalRenkoEngine, BrickConfiguration]]] = {
     "fixed": fixed_engine,
     "atr": atr_engine,
     "percentage": percentage_engine,
     "hybrid": hybrid_engine,
+    "adaptive": adaptive_engine,
 }
 
 

@@ -61,6 +61,12 @@ class BrickConfiguration:
     median_lookback: Optional[int] = None
     hybrid_weight: Optional[float] = None
     ai_model: Optional[str] = None
+    # Adaptive Renko (Sprint 6J). All optional; non-adaptive configs are
+    # unaffected. The child providers reuse the existing brick_size / percentage /
+    # atr_period / atr_multiplier fields, so only the regime-detection knobs are new.
+    adaptive_window: Optional[int] = None
+    adaptive_thresholds: Optional[tuple] = None  # two ascending positive floats
+    adaptive_hysteresis: Optional[float] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def resolved_provider(self) -> str:

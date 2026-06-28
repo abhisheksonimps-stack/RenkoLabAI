@@ -111,7 +111,32 @@ class DefaultBrickValidator(BrickValidator):
             if not self._builder_registry.exists(builder_name):
                 raise RenkoConfigurationError(f"Unknown brick builder: {builder_name}")
 
+        if configuration.resolved_provider() == "adaptive":
+            self._validate_adaptive(configuration)
+
         return True
+
+    def _validate_adaptive(self, configuration) -> None:
+        # Adaptive composes Fixed (low) / Percentage (medium) / ATR (high), so the
+        # parameters those children need must be present and valid.
+        if configuration.brick_size is None or configuration.brick_size <= 0:
+            raise RenkoConfigurationError("Adaptive requires a positive brick_size (low regime)")
+        if configuration.percentage is None or configuration.percentage <= 0:
+            raise RenkoConfigurationError("Adaptive requires a positive percentage (medium regime)")
+        if configuration.atr_period is None or configuration.atr_period <= 0:
+            raise RenkoConfigurationError("Adaptive requires a positive atr_period (high regime)")
+
+        if configuration.adaptive_window is not None and configuration.adaptive_window <= 0:
+            raise RenkoConfigurationError("adaptive_window must be a positive integer")
+        if configuration.adaptive_hysteresis is not None and configuration.adaptive_hysteresis < 0:
+            raise RenkoConfigurationError("adaptive_hysteresis must be >= 0")
+        thresholds = configuration.adaptive_thresholds
+        if thresholds is not None:
+            t = tuple(thresholds)
+            if len(t) != 2 or not (t[0] < t[1]) or t[0] <= 0:
+                raise RenkoConfigurationError(
+                    "adaptive_thresholds must be two ascending positive values"
+                )
 
     async def validate_data(self, market_data: Any) -> bool:
         if market_data is None:

@@ -369,7 +369,9 @@ async def test_engine_replay_determinism_with_strategy():
 # =====================================================================
 
 def test_regression_all_providers_still_registered():
-    assert default_provider_registry().names() == ["fixed", "atr", "percentage"]
+    names = default_provider_registry().names()
+    for name in ("fixed", "atr", "percentage"):
+        assert name in names
 
 
 def test_regression_legacy_percentage_construction_unchanged():

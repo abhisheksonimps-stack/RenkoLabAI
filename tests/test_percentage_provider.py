@@ -365,7 +365,9 @@ def test_regression_atr_provider_unchanged():
 
 def test_regression_default_registry_has_all_three_providers():
     reg = default_provider_registry()
-    assert reg.names() == ["fixed", "atr", "percentage"]
+    # The three original providers remain; Adaptive was added in Sprint 6J.
+    for name in ("fixed", "atr", "percentage"):
+        assert name in reg.names()
 
 
 # ---------------------------------------------------------------------------

@@ -359,6 +359,210 @@ class PercentageBrickSizeProvider(BrickSizeProvider):
         return self._minimum_brick_size
 
 
+class AdaptiveBrickSizeProvider(BrickSizeProvider):
+    """Adaptive Renko brick sizing (Sprint 6J).
+
+    A composite ``BrickSizeProvider`` that selects, per candle, one of three
+    fixed child providers based on a deterministic volatility regime:
+
+        low volatility    -> Fixed provider
+        medium volatility -> Percentage provider
+        high volatility   -> ATR provider
+
+    SELECT-only (no blending). The regime signal is an O(1) exponential moving
+    average of True Range; ``_detect_regime`` is a pure, hysteresis-aware
+    classifier and ``_select_provider`` is a pure lookup. All children are
+    updated every candle so a regime switch yields a correct size with no
+    warm-up gap, which (together with persisted state) keeps replay and restore
+    deterministic.
+
+    Children are keyed by regime label. Per the approved Sprint 6J design the set
+    is fixed (no arbitrary provider graphs); ``from_configuration`` builds the
+    three children from the same :class:`BrickConfiguration`, and the factory may
+    re-inject equivalent children via ``set_sub_providers``.
+    """
+
+    name = "adaptive"
+
+    # Fixed regime -> provider-registry name mapping (Sprint 6J: not arbitrary).
+    CHILD_PROVIDER_NAMES: Dict[str, str] = {
+        "low": "fixed",
+        "medium": "percentage",
+        "high": "atr",
+    }
+    _REGIMES = ("low", "medium", "high")
+
+    def __init__(
+        self,
+        children: Dict[str, BrickSizeProvider],
+        window: int = 14,
+        thresholds: tuple[float, float] = (1.0, 2.0),
+        hysteresis: float = 0.0,
+    ) -> None:
+        self._validate_children(children)
+        self._children: Dict[str, BrickSizeProvider] = dict(children)
+        if int(window) <= 0:
+            raise RenkoConfigurationError("adaptive_window must be a positive integer")
+        self._window = int(window)
+        t = tuple(float(x) for x in thresholds)
+        if len(t) != 2 or not (t[0] < t[1]) or t[0] <= 0:
+            raise RenkoConfigurationError(
+                "adaptive_thresholds must be two ascending positive values"
+            )
+        self._thresholds = t
+        if float(hysteresis) < 0:
+            raise RenkoConfigurationError("adaptive_hysteresis must be >= 0")
+        self._hysteresis = float(hysteresis)
+        # Dynamic state (persisted).
+        self._stat: Optional[float] = None
+        self._prev_close: Optional[float] = None
+        self._regime: Optional[str] = None
+        self._count = 0
+
+    @staticmethod
+    def _validate_children(children: Dict[str, BrickSizeProvider]) -> None:
+        if set(children) != set(AdaptiveBrickSizeProvider._REGIMES):
+            raise RenkoConfigurationError(
+                "Adaptive children must be keyed exactly by 'low', 'medium', 'high'"
+            )
+
+    @classmethod
+    def from_configuration(cls, configuration: BrickConfiguration) -> "AdaptiveBrickSizeProvider":
+        # Self-build the fixed child set from the same configuration. Non-recursive:
+        # the three concrete leaf providers are constructed directly (never via the
+        # registry / factory), so there is no possibility of adaptive-in-adaptive.
+        children = {
+            "low": FixedBrickSizeProvider.from_configuration(configuration),
+            "medium": PercentageBrickSizeProvider.from_configuration(configuration),
+            "high": ATRBrickSizeProvider.from_configuration(configuration),
+        }
+        window = configuration.adaptive_window or 14
+        thresholds = configuration.adaptive_thresholds or (1.0, 2.0)
+        hysteresis = configuration.adaptive_hysteresis or 0.0
+        return cls(children, window=window, thresholds=tuple(thresholds), hysteresis=hysteresis)
+
+    # -- factory injection hook (duck-typed; mirrors set_price_reference_strategy)
+    def required_children(self) -> Dict[str, str]:
+        """Regime -> provider-registry name. The factory uses this to build and
+        inject leaf children without recursion."""
+        return dict(self.CHILD_PROVIDER_NAMES)
+
+    def set_sub_providers(self, children: Dict[str, BrickSizeProvider]) -> None:
+        self._validate_children(children)
+        self._children = dict(children)
+
+    # -- regime logic ---------------------------------------------------------
+    def _detect_regime(self) -> str:
+        s = self._stat if self._stat is not None else 0.0
+        t1, t2 = self._thresholds
+        h = self._hysteresis
+        cur = self._regime
+        if cur is None:
+            # First classification: plain thresholds, no hysteresis.
+            if s < t1:
+                return "low"
+            if s < t2:
+                return "medium"
+            return "high"
+        # Hysteresis-aware transitions: switching up needs to clear threshold+h,
+        # switching down needs to fall below threshold-h. Prevents flapping.
+        if cur == "low":
+            if s >= t2 + h:
+                return "high"
+            if s >= t1 + h:
+                return "medium"
+            return "low"
+        if cur == "medium":
+            if s >= t2 + h:
+                return "high"
+            if s < t1 - h:
+                return "low"
+            return "medium"
+        # cur == "high"
+        if s < t1 - h:
+            return "low"
+        if s < t2 - h:
+            return "medium"
+        return "high"
+
+    def _select_provider(self) -> BrickSizeProvider:
+        regime = self._regime if self._regime is not None else "low"
+        return self._children[regime]
+
+    # -- BrickSizeProvider contract ------------------------------------------
+    def update(self, candle: Any) -> None:
+        # Update every child so each holds valid state across regime switches.
+        for child in self._children.values():
+            child.update(candle)
+        high, low, close = _candle_prices(candle)
+        if self._prev_close is None:
+            true_range = high - low
+        else:
+            true_range = max(
+                high - low,
+                abs(high - self._prev_close),
+                abs(low - self._prev_close),
+            )
+        if self._stat is None:
+            self._stat = true_range
+        else:
+            alpha = 2.0 / (self._window + 1)
+            self._stat = alpha * true_range + (1.0 - alpha) * self._stat
+        self._prev_close = close
+        self._count += 1
+        self._regime = self._detect_regime()
+
+    def current_size(self) -> float:
+        if not self.ready():
+            raise RuntimeError("Adaptive provider is not ready; children still warming up")
+        return self._select_provider().current_size()
+
+    def ready(self) -> bool:
+        # Refinement 1: ready only when ALL children are ready, guaranteeing a
+        # correct size immediately after any regime switch.
+        return all(child.ready() for child in self._children.values())
+
+    def reset(self) -> None:
+        self._stat = None
+        self._prev_close = None
+        self._regime = None
+        self._count = 0
+        for child in self._children.values():
+            child.reset()
+
+    def export_state(self) -> dict:
+        return {
+            "stat": self._stat,
+            "prev_close": self._prev_close,
+            "regime": self._regime,
+            "count": self._count,
+            "sub": {name: child.export_state() for name, child in self._children.items()},
+        }
+
+    def import_state(self, state: dict) -> None:
+        if not state:
+            return
+        stat = state.get("stat")
+        self._stat = float(stat) if stat is not None else None
+        prev = state.get("prev_close")
+        self._prev_close = float(prev) if prev is not None else None
+        self._regime = state.get("regime")
+        self._count = int(state.get("count", 0) or 0)
+        sub = state.get("sub", {}) or {}
+        for name, child in self._children.items():
+            if name in sub:
+                child.import_state(sub[name])
+
+    # Introspection helpers (tests / diagnostics; not on the engine path).
+    @property
+    def regime(self) -> Optional[str]:
+        return self._regime
+
+    @property
+    def children(self) -> Dict[str, BrickSizeProvider]:
+        return dict(self._children)
+
+
 class BrickSizeProviderRegistry:
     """Registry of brick-size provider factories, keyed by name.
 
@@ -398,4 +602,5 @@ def default_provider_registry() -> BrickSizeProviderRegistry:
     registry.register("fixed", FixedBrickSizeProvider.from_configuration)
     registry.register("atr", ATRBrickSizeProvider.from_configuration)
     registry.register("percentage", PercentageBrickSizeProvider.from_configuration)
+    registry.register("adaptive", AdaptiveBrickSizeProvider.from_configuration)
     return registry

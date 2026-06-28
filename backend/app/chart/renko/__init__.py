@@ -38,6 +38,7 @@ from .interfaces import (
 from .models import Brick, BrickDirection, BrickSnapshot, BrickState, BrickType
 from .plugin import RenkoPlugin
 from .providers import (
+    AdaptiveBrickSizeProvider,
     ATRBrickSizeProvider,
     BrickSizeProviderRegistry,
     FixedBrickSizeProvider,
@@ -94,6 +95,7 @@ __all__ = [
     "FixedBrickSizeProvider",
     "ATRBrickSizeProvider",
     "PercentageBrickSizeProvider",
+    "AdaptiveBrickSizeProvider",
     "BrickSizeProviderRegistry",
     "default_provider_registry",
     "ClosePriceStrategy",
