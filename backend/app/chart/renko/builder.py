@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 from typing import Any, Callable, Dict, List
 
@@ -59,6 +60,51 @@ class TraditionalBrickBuilder(BrickBuilder):
         )
 
 
+class HybridBrickBuilder(BrickBuilder):
+    """Hybrid Renko builder (Sprint 6I).
+
+    Plugs into the Sprint 6F builder abstraction without any engine changes: the
+    engine's continuation/reversal path is untouched; this builder only assembles
+    the resulting bricks. It *reuses* the Traditional builder for the base brick
+    geometry (no duplicated builder logic) and enriches each brick with a hybrid
+    construction marker and a monotonic sequence number.
+
+    Unlike the stateless Traditional builder, it carries a small amount of state
+    (the sequence counter), which exercises the Sprint 6G persistence path:
+    ``export_state``/``import_state`` capture and restore the counter so a
+    resumed engine continues producing identical hybrid brick IDs — proving
+    deterministic snapshot/restore for stateful builders.
+    """
+
+    name = "hybrid"
+
+    def __init__(self) -> None:
+        # Reuse the Traditional builder for base geometry (composition, not
+        # duplication). The engine owns the Renko path algorithm; this stays a
+        # pure brick assembler.
+        self._base = TraditionalBrickBuilder()
+        self._sequence = 0
+
+    async def build_brick(self, market_data: Any, configuration: BrickConfiguration) -> Brick:
+        base = await self._base.build_brick(market_data, configuration)
+        self._sequence += 1
+        return replace(
+            base,
+            brick_id=f"hybrid-{self._sequence}-{base.brick_id}",
+            metadata={
+                **base.metadata,
+                "builder_type": "hybrid",
+                "hybrid_sequence": self._sequence,
+            },
+        )
+
+    def export_state(self) -> Dict[str, Any]:
+        return {"sequence": self._sequence}
+
+    def import_state(self, state: Dict[str, Any]) -> None:
+        self._sequence = int(state.get("sequence", 0)) if state else 0
+
+
 # Same architectural style as BrickSizeProviderFactory / PriceReferenceStrategyFactory:
 # a factory turns a configuration into a builder instance. Builders are stateless
 # (a pure market_data -> Brick transform), so factories may return fresh
@@ -103,4 +149,5 @@ def default_builder_registry() -> BrickBuilderRegistry:
     """Build a registry pre-populated with the built-in Traditional builder."""
     registry = BrickBuilderRegistry()
     registry.register("traditional", lambda configuration: TraditionalBrickBuilder())
+    registry.register("hybrid", lambda configuration: HybridBrickBuilder())
     return registry

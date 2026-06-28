@@ -51,6 +51,7 @@ class BrickConfiguration:
     atr_multiplier: Optional[float] = None
     provider: Optional[str] = None
     builder: Optional[str] = None
+    builder_type: Optional[str] = None
     percentage: Optional[float] = None
     reference_price: ReferencePrice = ReferencePrice.CLOSE
     reference_price_strategy: Optional[str] = None
@@ -80,11 +81,20 @@ class BrickConfiguration:
     def resolved_builder(self) -> str:
         """Resolve the brick-builder name.
 
-        Backwards compatible: configurations that pre-date Sprint 6F do not set
-        ``builder``; they default to the Traditional builder, so behaviour is
-        unchanged.
+        Precedence: explicit ``builder_type`` (Sprint 6I) wins, then the Sprint
+        6F ``builder`` field, then a ``builder_type`` entry in ``metadata`` (a
+        no-schema-change escape hatch), else the Traditional default. Pre-6F/6I
+        configurations resolve to ``traditional`` unchanged.
         """
-        return self.builder or "traditional"
+        if self.builder_type:
+            return self.builder_type
+        if self.builder:
+            return self.builder
+        if self.metadata:
+            meta_builder = self.metadata.get("builder_type")
+            if meta_builder:
+                return meta_builder
+        return "traditional"
 
     def resolved_reference_strategy(self) -> str:
         """Resolve the price-reference strategy name.

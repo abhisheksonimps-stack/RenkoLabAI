@@ -139,10 +139,24 @@ def percentage_engine(pct: float = 1.0) -> tuple[TraditionalRenkoEngine, BrickCo
     return engine, cfg
 
 
+def hybrid_engine(size: float = 1.5) -> tuple[TraditionalRenkoEngine, BrickConfiguration]:
+    """Fixed sizing with the Hybrid builder — measures the Hybrid construction
+    path (benchmark compatibility for Sprint 6I)."""
+    from backend.app.chart.renko.builder import HybridBrickBuilder
+
+    cfg = BrickConfiguration(
+        brick_type=BrickType.TRADITIONAL, brick_size=size, builder_type="hybrid", mode=RenkoMode.REPLAY
+    )
+    engine = TraditionalRenkoEngine(provider=FixedBrickSizeProvider(size), builder=HybridBrickBuilder())
+    engine.configure(cfg)
+    return engine, cfg
+
+
 ENGINE_BUILDERS: Dict[str, Callable[[], tuple[TraditionalRenkoEngine, BrickConfiguration]]] = {
     "fixed": fixed_engine,
     "atr": atr_engine,
     "percentage": percentage_engine,
+    "hybrid": hybrid_engine,
 }
 
 

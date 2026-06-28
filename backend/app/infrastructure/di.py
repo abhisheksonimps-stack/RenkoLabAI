@@ -33,6 +33,7 @@ class Container(containers.DeclarativeContainer):
         DefaultBrickValidator,
         provider_registry=brick_size_provider_registry,
         strategy_registry=price_reference_strategy_registry,
+        builder_registry=brick_builder_registry,
     )
     renko_factory = providers.Factory(
         RenkoFactory,

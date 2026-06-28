@@ -16,6 +16,7 @@ from backend.app.chart.renko.exceptions import (
     UnsupportedRenkoMode,
     ValidationFailed,
 )
+from backend.app.chart.renko.builder import BrickBuilderRegistry
 from backend.app.chart.renko.interfaces import BrickValidator
 from backend.app.chart.renko.providers import BrickSizeProviderRegistry
 from backend.app.chart.renko.strategies import PriceReferenceStrategyRegistry
@@ -26,11 +27,13 @@ class DefaultBrickValidator(BrickValidator):
         self,
         provider_registry: BrickSizeProviderRegistry | None = None,
         strategy_registry: PriceReferenceStrategyRegistry | None = None,
+        builder_registry: BrickBuilderRegistry | None = None,
     ) -> None:
         # Optional: when supplied, the validator can confirm that the configured
-        # provider / reference-price strategy actually exist in their registries.
+        # provider / reference-price strategy / builder actually exist.
         self._provider_registry = provider_registry
         self._strategy_registry = strategy_registry
+        self._builder_registry = builder_registry
 
     async def validate_configuration(self, configuration: BrickConfiguration) -> bool:
         if configuration.brick_size <= 0:
@@ -102,6 +105,11 @@ class DefaultBrickValidator(BrickValidator):
                 raise RenkoConfigurationError(
                     f"Unknown reference price strategy: {strategy_name}"
                 )
+
+        if self._builder_registry is not None:
+            builder_name = configuration.resolved_builder()
+            if not self._builder_registry.exists(builder_name):
+                raise RenkoConfigurationError(f"Unknown brick builder: {builder_name}")
 
         return True
 

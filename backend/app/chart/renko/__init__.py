@@ -1,4 +1,4 @@
-from .builder import BrickBuilderRegistry, TraditionalBrickBuilder, default_builder_registry
+from .builder import BrickBuilderRegistry, HybridBrickBuilder, TraditionalBrickBuilder, default_builder_registry
 from .configuration import (
     BrickConfiguration,
     PriceSource,
@@ -7,9 +7,13 @@ from .configuration import (
     RoundingMode,
 )
 from .exceptions import (
+    CorruptedSnapshotError,
+    IncompatibleSnapshotError,
     InvalidBrickSize,
     RenkoConfigurationError,
     RenkoEngineError,
+    SnapshotError,
+    SnapshotVersionError,
     UnsupportedRenkoMode,
     ValidationFailed,
 )
@@ -53,11 +57,20 @@ from .strategies import (
     default_strategy_registry,
 )
 from .registry import RenkoRegistry
+from .snapshot import (
+    SNAPSHOT_SCHEMA_VERSION,
+    EngineState,
+    JsonSnapshotSerializer,
+    SnapshotManager,
+    SnapshotSerializer,
+    validate_snapshot,
+)
 from .validator import DefaultBrickValidator
 
 __all__ = [
     "BrickBuilder",
     "TraditionalBrickBuilder",
+    "HybridBrickBuilder",
     "BrickBuilderRegistry",
     "default_builder_registry",
     "BrickSizeProvider",
@@ -106,4 +119,14 @@ __all__ = [
     "UnsupportedRenkoMode",
     "ValidationFailed",
     "RenkoEngineError",
+    "EngineState",
+    "SnapshotSerializer",
+    "JsonSnapshotSerializer",
+    "SnapshotManager",
+    "validate_snapshot",
+    "SNAPSHOT_SCHEMA_VERSION",
+    "SnapshotError",
+    "CorruptedSnapshotError",
+    "SnapshotVersionError",
+    "IncompatibleSnapshotError",
 ]

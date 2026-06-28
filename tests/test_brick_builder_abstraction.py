@@ -55,7 +55,8 @@ def test_traditional_builder_implements_interface():
 
 def test_default_builder_registry_has_traditional():
     reg = default_builder_registry()
-    assert reg.names() == ["traditional"]
+    # Traditional is always present; Hybrid was added in Sprint 6I.
+    assert "traditional" in reg.names()
     assert reg.exists("traditional")
     builder = reg.create(trad_config())
     assert isinstance(builder, BrickBuilder)
@@ -148,7 +149,7 @@ def test_di_exposes_builder_registry():
     container = configure_container()
     reg = container.brick_builder_registry()
     assert reg is not None
-    assert reg.names() == ["traditional"]
+    assert "traditional" in reg.names()
 
 
 # ---------------------------------------------------------------------------
