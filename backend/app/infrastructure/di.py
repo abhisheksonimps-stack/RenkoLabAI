@@ -9,6 +9,7 @@ from backend.app.chart.renko.registry import RenkoRegistry
 from backend.app.chart.renko.providers import default_provider_registry
 from backend.app.chart.renko.strategies import default_strategy_registry
 from backend.app.chart.renko.builder import default_builder_registry
+from backend.app.chart.renko.snapshot import JsonSnapshotSerializer, SnapshotManager
 from backend.app.chart.renko.validator import DefaultBrickValidator
 
 
@@ -36,6 +37,15 @@ class Container(containers.DeclarativeContainer):
     renko_factory = providers.Factory(
         RenkoFactory,
         registry=renko_registry,
+        provider_registry=brick_size_provider_registry,
+        strategy_registry=price_reference_strategy_registry,
+        builder_registry=brick_builder_registry,
+    )
+
+    snapshot_serializer = providers.Singleton(JsonSnapshotSerializer)
+    snapshot_manager = providers.Factory(
+        SnapshotManager,
+        serializer=snapshot_serializer,
         provider_registry=brick_size_provider_registry,
         strategy_registry=price_reference_strategy_registry,
         builder_registry=brick_builder_registry,

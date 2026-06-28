@@ -50,6 +50,14 @@ class PriceReferenceStrategy(ABC):
     def reference_price(self, candle: Any) -> float:
         raise NotImplementedError
 
+    def export_state(self) -> dict:
+        """Return this strategy's persistable state. Stateless by default."""
+        return {}
+
+    def import_state(self, state: dict) -> None:
+        """Restore this strategy's state. No-op by default (stateless)."""
+        return None
+
 
 class BrickSizeProvider(ABC):
     """Abstraction that owns brick-size calculation.
@@ -80,11 +88,27 @@ class BrickSizeProvider(ABC):
         """Completely clear provider state so replay is deterministic."""
         raise NotImplementedError
 
+    def export_state(self) -> dict:
+        """Return this provider's persistable rolling state. Empty by default."""
+        return {}
+
+    def import_state(self, state: dict) -> None:
+        """Restore this provider's rolling state. No-op by default (stateless)."""
+        return None
+
 
 class BrickBuilder(ABC):
     @abstractmethod
     async def build_brick(self, market_data: Any, configuration: BrickConfiguration) -> "Brick":
         raise NotImplementedError
+
+    def export_state(self) -> dict:
+        """Return this builder's persistable state. Stateless by default."""
+        return {}
+
+    def import_state(self, state: dict) -> None:
+        """Restore this builder's state. No-op by default (stateless)."""
+        return None
 
 
 class BrickValidator(ABC):

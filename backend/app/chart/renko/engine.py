@@ -17,9 +17,27 @@ from backend.app.chart.renko.models import Brick, BrickDirection, BrickSnapshot,
 from backend.app.events.bus import EventBus
 from backend.app.chart.renko.builder import TraditionalBrickBuilder
 from backend.app.chart.renko.providers import FixedBrickSizeProvider
+from backend.app.chart.renko.snapshot import (
+    SNAPSHOT_SCHEMA_VERSION,
+    EngineState,
+    JsonSnapshotSerializer,
+    SnapshotSerializer,
+    validate_snapshot,
+)
+from backend.app.chart.renko.exceptions import IncompatibleSnapshotError
+from backend.app.chart.renko.serialization import (
+    brick_from_dict,
+    brick_state_from_dict,
+    brick_state_to_dict,
+    brick_to_dict,
+    configuration_from_dict,
+    configuration_to_dict,
+)
 
 
 class TraditionalRenkoEngine(RenkoEngine):
+    engine_type = "traditional"
+
     def __init__(
         self,
         event_bus: EventBus | None = None,
@@ -56,6 +74,106 @@ class TraditionalRenkoEngine(RenkoEngine):
     @property
     def builder(self) -> BrickBuilder:
         return self._builder
+
+    # ------------------------------------------------------------------
+    # State persistence & recovery
+    # ------------------------------------------------------------------
+    def snapshot(self) -> EngineState:
+        """Capture the engine's complete resumable state as an EngineState.
+
+        Linear in the number of bricks; no deep copies of the engine, no replay.
+        """
+        if self._configuration is None:
+            raise RuntimeError("Engine has not been configured")
+
+        strategy = getattr(self._provider, "strategy", None)
+        return EngineState(
+            schema_version=SNAPSHOT_SCHEMA_VERSION,
+            engine_type=self.engine_type,
+            configuration=configuration_to_dict(self._configuration),
+            builder_state=self._builder.export_state(),
+            brick_history=[brick_to_dict(brick) for brick in self._brick_history],
+            provider_state=self._provider.export_state() if self._provider is not None else {},
+            strategy_state=strategy.export_state() if strategy is not None else {},
+            metadata={
+                "brick_count": len(self._brick_history),
+                "engine_runtime": {
+                    "state": brick_state_to_dict(self._state) if self._state is not None else None,
+                    "pending_open_price": self._pending_open_price,
+                    "last_brick_boundary": self._last_brick_boundary,
+                    "last_published_size": self._last_published_size,
+                },
+            },
+        )
+
+    def save_state(self, serializer: SnapshotSerializer | None = None) -> str:
+        """Serialize the current snapshot to a string (JSON by default)."""
+        serializer = serializer or JsonSnapshotSerializer()
+        return serializer.serialize(self.snapshot())
+
+    def load_state(self, data: str, serializer: SnapshotSerializer | None = None) -> EngineState:
+        """Deserialize a serialized snapshot back into an EngineState."""
+        serializer = serializer or JsonSnapshotSerializer()
+        return serializer.deserialize(data)
+
+    def restore(self, engine_state: EngineState) -> None:
+        """Restore engine state from an EngineState so processing can resume.
+
+        Imports component (provider / strategy / builder) state, rebuilds the
+        brick history, and reinstates engine runtime — without replaying candles.
+        The engine's provider/builder must already be of the configured kind
+        (the SnapshotManager wires these from the registries before calling).
+        """
+        configuration = validate_snapshot(
+            engine_state, supported_engine_types={self.engine_type}
+        )
+
+        # Verify the live components match what the snapshot expects, so a direct
+        # restore (off the SnapshotManager path) can't silently load state into
+        # the wrong provider / builder / strategy.
+        self._assert_component_compatible(
+            "provider", getattr(self._provider, "name", None), configuration.resolved_provider()
+        )
+        self._assert_component_compatible(
+            "builder", getattr(self._builder, "name", None), configuration.resolved_builder()
+        )
+        live_strategy = getattr(self._provider, "strategy", None)
+        if live_strategy is not None:
+            self._assert_component_compatible(
+                "strategy",
+                getattr(live_strategy, "name", None),
+                configuration.resolved_reference_strategy(),
+            )
+
+        self._configuration = configuration
+
+        if self._provider is not None:
+            self._provider.import_state(engine_state.provider_state)
+            strategy = getattr(self._provider, "strategy", None)
+            if strategy is not None:
+                strategy.import_state(engine_state.strategy_state)
+        self._builder.import_state(engine_state.builder_state)
+
+        self._brick_history = deque(
+            brick_from_dict(item) for item in engine_state.brick_history
+        )
+
+        runtime = engine_state.metadata.get("engine_runtime", {})
+        state_dict = runtime.get("state")
+        self._state = brick_state_from_dict(state_dict) if state_dict is not None else None
+        self._pending_open_price = runtime.get("pending_open_price")
+        self._last_brick_boundary = runtime.get("last_brick_boundary")
+        self._last_published_size = runtime.get("last_published_size")
+
+    @staticmethod
+    def _assert_component_compatible(kind: str, live_name: str | None, expected: str) -> None:
+        # Tolerant: only enforce when the live component advertises a name.
+        if live_name is not None and live_name != expected:
+            raise IncompatibleSnapshotError(
+                f"Snapshot {kind} '{expected}' is incompatible with the engine's "
+                f"live {kind} '{live_name}'"
+            )
+
 
     def set_brick_size_provider(self, provider: BrickSizeProvider) -> None:
         """Inject the brick-size provider the engine should use (black box)."""
@@ -131,16 +249,32 @@ class TraditionalRenkoEngine(RenkoEngine):
             return
 
         movements = self._generate_bricks_from_price(candle_price, candle_timestamp, brick_size)
+        publishing = self._event_bus is not None
+        last_brick: Brick | None = None
         for brick_data in movements:
             brick = await self._builder.build_brick(brick_data, self._configuration)
             self._brick_history.append(brick)
-            await self._publish_brick_event(brick_data["event"], brick)
+            last_brick = brick
+            if publishing:
+                # When events are observed, state must advance per brick because
+                # each published snapshot reflects the current state.
+                await self._publish_brick_event(brick_data["event"], brick)
+                self._state = BrickState(
+                    direction=brick.direction,
+                    last_price=brick.close_price,
+                    brick_size=brick_size,
+                    is_open=True,
+                    metadata={"last_brick_id": brick.brick_id},
+                )
+        if last_brick is not None and not publishing:
+            # No event bus: intermediate states are never observed, so build the
+            # resulting state once. Identical final state, far fewer allocations.
             self._state = BrickState(
-                direction=brick.direction,
-                last_price=brick.close_price,
+                direction=last_brick.direction,
+                last_price=last_brick.close_price,
                 brick_size=brick_size,
                 is_open=True,
-                metadata={"last_brick_id": brick.brick_id},
+                metadata={"last_brick_id": last_brick.brick_id},
             )
 
     async def _maybe_publish_size_update(self, brick_size: float) -> None:

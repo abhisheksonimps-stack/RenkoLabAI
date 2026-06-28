@@ -9,15 +9,29 @@ from backend.app.chart.renko.models import Brick, BrickDirection
 
 
 class TraditionalBrickBuilder(BrickBuilder):
+    name = "traditional"
+
     async def build_brick(self, market_data: Any, configuration: BrickConfiguration) -> Brick:
         if not isinstance(market_data, dict):
             raise TypeError("Brick builder market_data must be a dict")
 
-        direction = BrickDirection(market_data["direction"])
+        # The engine already supplies a BrickDirection; only re-validate when a
+        # raw value (e.g. a string from an external caller) is passed. Identical
+        # result, but avoids the enum __call__ on the hot path.
+        raw_direction = market_data["direction"]
+        direction = (
+            raw_direction
+            if isinstance(raw_direction, BrickDirection)
+            else BrickDirection(raw_direction)
+        )
         open_price = float(market_data["open_price"])
         close_price = float(market_data["close_price"])
-        high_price = float(market_data.get("high_price", max(open_price, close_price)))
-        low_price = float(market_data.get("low_price", min(open_price, close_price)))
+        # Avoid computing the max/min default unless the field is actually absent
+        # (the engine always provides them). Same output, fewer calls.
+        high = market_data.get("high_price")
+        high_price = float(high) if high is not None else max(open_price, close_price)
+        low = market_data.get("low_price")
+        low_price = float(low) if low is not None else min(open_price, close_price)
         volume = float(market_data.get("volume", 0.0) or 0.0)
         timestamp = market_data["timestamp"]
 

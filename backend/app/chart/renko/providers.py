@@ -145,6 +145,21 @@ class ATRBrickSizeProvider(BrickSizeProvider):
         self._count = 0
         self._atr = None
 
+    def export_state(self) -> dict:
+        return {
+            "prev_close": self._prev_close,
+            "warmup_sum": self._warmup_sum,
+            "count": self._count,
+            "atr": self._atr,
+        }
+
+    def import_state(self, state: dict) -> None:
+        self._prev_close = state.get("prev_close")
+        self._warmup_sum = float(state.get("warmup_sum", 0.0) or 0.0)
+        self._count = int(state.get("count", 0) or 0)
+        atr = state.get("atr")
+        self._atr = float(atr) if atr is not None else None
+
     # Introspection helpers (used by tests / diagnostics; not part of the engine path).
     @property
     def atr(self) -> Optional[float]:
@@ -318,6 +333,13 @@ class PercentageBrickSizeProvider(BrickSizeProvider):
 
     def reset(self) -> None:
         self._current_size = None
+
+    def export_state(self) -> dict:
+        return {"current_size": self._current_size}
+
+    def import_state(self, state: dict) -> None:
+        size = state.get("current_size")
+        self._current_size = float(size) if size is not None else None
 
     # Introspection helpers (tests / diagnostics; not part of the engine path).
     @property
