@@ -6,12 +6,15 @@ Handles position reconciliation and updates from broker-reported positions.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional
 
 from backend.app.trading.broker.interfaces import BrokerAdapter, Position as BrokerPosition
 from backend.app.trading.execution.order import Fill, OrderSide
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -104,7 +107,7 @@ class PositionSynchronizer:
             self._last_sync = datetime.utcnow()
             return list(self._positions.values())
         except Exception as exc:
-            # Log error but don't crash
+            logger.exception("Broker position synchronization failed: %s", exc)
             return list(self._positions.values())
 
     async def sync_symbol(self, symbol: str) -> Optional[PositionRecord]:
@@ -115,8 +118,8 @@ class PositionSynchronizer:
                 if bp.symbol == symbol and bp.quantity > 0:
                     self._update_from_broker(bp)
                     return self._positions.get(symbol)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Broker symbol position synchronization failed for %s: %s", symbol, exc)
         return self._positions.get(symbol)
 
     def apply_fill(self, fill: Fill, symbol: str) -> None:

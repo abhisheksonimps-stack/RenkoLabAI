@@ -6,6 +6,7 @@ Integrates with the existing RiskManager and adds order-level checks.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional
@@ -14,6 +15,8 @@ from backend.app.trading.broker.interfaces import BrokerAdapter
 from backend.app.trading.execution.order import Order, OrderSide, OrderStatus
 from backend.app.trading.oms.positions import PositionSynchronizer, PositionRecord
 from backend.app.trading.strategy.risk import RiskManager, RiskRule
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -197,10 +200,14 @@ class PreExecutionRiskValidator:
         # Get current position for this symbol
         current_position = self._position_synchronizer.get_position(order.symbol)
 
-        # For BUY orders, check if we already have a position
         if order.side == OrderSide.BUY and current_position is not None:
-            # Could add logic to prevent doubling up
-            pass
+            projected_value = (current_position.quantity + order.quantity) * reference_price
+            if self._max_position_value is not None and projected_value > self._max_position_value:
+                return RiskCheckResult(
+                    passed=False,
+                    reason=f"Projected broker position value {projected_value:.2f} exceeds max {self._max_position_value:.2f}",
+                    rule_name="broker_positions",
+                )
 
         return RiskCheckResult(passed=True, reason="Broker position check passed", rule_name="broker_positions")
 

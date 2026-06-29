@@ -10,7 +10,22 @@ import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-import ccxt.async_support as ccxt
+try:
+    import ccxt.async_support as ccxt
+except ImportError:  # pragma: no cover - deployment dependency may be absent in tests/tools
+    class _CCXTError(Exception):
+        pass
+
+    class _MissingCCXT:
+        RateLimitExceeded = _CCXTError
+        InsufficientFunds = _CCXTError
+        InvalidOrder = _CCXTError
+        OrderNotFound = _CCXTError
+
+        def __getattr__(self, name: str):
+            raise AttributeError(name)
+
+    ccxt = _MissingCCXT()
 
 from backend.app.trading.broker.interfaces import (
     AccountInfo,
@@ -85,7 +100,7 @@ class CCXTAdapter(BrokerAdapter):
             try:
                 await self._exchange.close()
             except Exception:
-                pass  # Best-effort close
+                self._connected = False
             self._exchange = None
         self._connected = False
 
@@ -113,7 +128,7 @@ class CCXTAdapter(BrokerAdapter):
                         if float(pos.get("contracts", 0)) > 0:
                             positions.append(self._map_position(pos))
                 except Exception:
-                    pass  # Positions not supported or failed
+                    positions = []
 
             return AccountInfo(
                 account_id=balance.get("info", {}).get("accountId", self._exchange_id),

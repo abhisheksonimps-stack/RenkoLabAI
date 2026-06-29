@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type
 
 from backend.app.events.base import BaseEvent
 from backend.app.marketdata.streaming.dispatcher import EventDispatcher
@@ -14,6 +14,7 @@ from backend.app.marketdata.streaming.interfaces import (
     MarketDataSubscriber,
 )
 from backend.app.marketdata.streaming.reconnect import ReconnectManager
+from backend.app.marketdata.streaming.router import MarketRouter
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ class StreamingManager:
         self._streams: Dict[str, MarketDataStream] = {}
         self._subscribers: Dict[str, MarketDataSubscriber] = {}
         self._dispatcher = EventDispatcher()
+        self._router = MarketRouter()
         self._reconnect_managers: Dict[str, ReconnectManager] = {}
         self._running = False
         self._tasks: List[asyncio.Task[None]] = []
@@ -80,8 +82,9 @@ class StreamingManager:
         self._running = True
         logger.info("Starting streaming manager")
 
-        # Start dispatcher
+        # Start dispatcher and router
         await self._dispatcher.start()
+        await self._router.start()
 
         # Start all streams
         for name, stream in self._streams.items():
@@ -128,7 +131,8 @@ class StreamingManager:
             except Exception as exc:  # pylint: disable=broad-except
                 logger.exception("Error stopping reconnect manager: %s", exc)
 
-        # Stop dispatcher
+        # Stop dispatcher and router
+        await self._router.stop()
         await self._dispatcher.stop()
 
         # Disconnect all streams
@@ -150,6 +154,7 @@ class StreamingManager:
                 if not self._running:
                     break
                 await self._dispatcher.publish(event)
+                await self._router.route(event)
 
         except asyncio.CancelledError:
             logger.info("Stream %s cancelled", name)
@@ -176,6 +181,7 @@ class StreamingManager:
         return {
             "running": self._running,
             "dispatcher": dispatcher_health,
+            "router": await self._router.health(),
             "streams": stream_health,
             "reconnect_managers": reconnect_health,
             "subscribers": len(self._subscribers),
@@ -185,3 +191,12 @@ class StreamingManager:
     def dispatcher(self) -> EventDispatcher:
         """Get the event dispatcher."""
         return self._dispatcher
+    @property
+    def router(self) -> MarketRouter:
+        """Get the market data router."""
+        return self._router
+
+    @property
+    def streams(self) -> Dict[str, MarketDataStream]:
+        """Get registered streams."""
+        return dict(self._streams)

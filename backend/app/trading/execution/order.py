@@ -39,6 +39,7 @@ class Fill:
     reference_price: float      # pre-slippage reference (for slippage accounting)
     side: OrderSide
     timestamp: datetime
+    fill_id: Optional[str] = None
 
     @property
     def slippage(self) -> float:
@@ -58,6 +59,8 @@ class Order:
     fill: Optional[Fill] = None
     reject_reason: Optional[str] = None
     reserved: float = 0.0       # capital reserved at creation (released on settle)
+    broker_order_id: Optional[str] = None
+    client_order_id: Optional[str] = None
 
     def submit(self) -> None:
         self.status = OrderStatus.PENDING
