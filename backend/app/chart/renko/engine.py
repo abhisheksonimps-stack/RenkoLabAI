@@ -249,7 +249,14 @@ class TraditionalRenkoEngine(RenkoEngine):
             return
 
         movements = self._generate_bricks_from_price(candle_price, candle_timestamp, brick_size)
+        if not movements:
+            return
+
         publishing = self._event_bus is not None
+        if not publishing and self._builder.__class__ is TraditionalBrickBuilder:
+            self._append_traditional_bricks_fast(movements, brick_size)
+            return
+
         last_brick: Brick | None = None
         for brick_data in movements:
             brick = await self._builder.build_brick(brick_data, self._configuration)
@@ -269,6 +276,58 @@ class TraditionalRenkoEngine(RenkoEngine):
         if last_brick is not None and not publishing:
             # No event bus: intermediate states are never observed, so build the
             # resulting state once. Identical final state, far fewer allocations.
+            self._state = BrickState(
+                direction=last_brick.direction,
+                last_price=last_brick.close_price,
+                brick_size=brick_size,
+                is_open=True,
+                metadata={"last_brick_id": last_brick.brick_id},
+            )
+
+
+    def _append_traditional_bricks_fast(self, movements: list[dict[str, Any]], brick_size: float) -> None:
+        """Append traditional bricks without async builder overhead.
+
+        The replay hot path commonly runs without an event bus and with the
+        default TraditionalBrickBuilder. In that case no intermediate state or
+        builder side effects are observable, so we can construct the exact same
+        Brick objects directly and update engine state once at the end. Custom
+        builders and event-publishing paths continue to use the injected builder.
+        """
+        if self._configuration is None:
+            raise RuntimeError("Engine has not been configured")
+
+        configuration = self._configuration
+        metadata = {
+            "brick_size": configuration.brick_size,
+            "price_source": configuration.price_source.value,
+        }
+        last_brick: Brick | None = None
+        history_append = self._brick_history.append
+
+        for brick_data in movements:
+            direction = brick_data["direction"]
+            open_price = float(brick_data["open_price"])
+            close_price = float(brick_data["close_price"])
+            timestamp = brick_data["timestamp"]
+            brick = Brick(
+                brick_id=(
+                    f"brick-{direction.value}-{timestamp.isoformat()}-"
+                    f"{int(open_price * 100000)}-{int(close_price * 100000)}"
+                ),
+                direction=direction,
+                open_price=open_price,
+                close_price=close_price,
+                high_price=float(brick_data["high_price"]),
+                low_price=float(brick_data["low_price"]),
+                volume=float(brick_data.get("volume", 0.0) or 0.0),
+                created_at=timestamp,
+                metadata=metadata.copy(),
+            )
+            history_append(brick)
+            last_brick = brick
+
+        if last_brick is not None:
             self._state = BrickState(
                 direction=last_brick.direction,
                 last_price=last_brick.close_price,
