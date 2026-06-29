@@ -53,6 +53,7 @@ class Order:
     quantity: float
     reference_price: float
     created_at: datetime
+    symbol: str = "UNKNOWN"     # trading symbol (required for live execution)
     status: OrderStatus = OrderStatus.CREATED
     fill: Optional[Fill] = None
     reject_reason: Optional[str] = None
