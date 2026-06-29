@@ -13,6 +13,7 @@ from backend.app.marketdata.streaming.interfaces import (
     MarketDataStream,
     MarketDataSubscriber,
 )
+from backend.app.marketdata.streaming.reconnect import ReconnectManager
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class StreamingManager:
         self._streams: Dict[str, MarketDataStream] = {}
         self._subscribers: Dict[str, MarketDataSubscriber] = {}
         self._dispatcher = EventDispatcher()
+        self._reconnect_managers: Dict[str, ReconnectManager] = {}
         self._running = False
         self._tasks: List[asyncio.Task[None]] = []
 
@@ -40,6 +42,8 @@ class StreamingManager:
         """Unregister a market data stream."""
         if name in self._streams:
             del self._streams[name]
+            if name in self._reconnect_managers:
+                del self._reconnect_managers[name]
             logger.info("Unregistered stream: %s", name)
 
     def register_subscriber(self, name: str, subscriber: MarketDataSubscriber) -> None:
@@ -63,6 +67,11 @@ class StreamingManager:
             del self._subscribers[name]
             logger.info("Unregistered subscriber: %s", name)
 
+    def register_reconnect_manager(self, stream_name: str, manager: ReconnectManager) -> None:
+        """Register a reconnect manager for a stream."""
+        self._reconnect_managers[stream_name] = manager
+        logger.info("Registered reconnect manager for stream: %s", stream_name)
+
     async def start(self) -> None:
         """Start all streams and the dispatcher."""
         if self._running:
@@ -79,7 +88,23 @@ class StreamingManager:
             task = asyncio.create_task(self._run_stream(name, stream))
             self._tasks.append(task)
 
+        # Start all reconnect managers
+        for name, manager in self._reconnect_managers.items():
+            task = asyncio.create_task(self._run_reconnect_manager(name, manager))
+            self._tasks.append(task)
+
         logger.info("Streaming manager started with %d streams", len(self._streams))
+
+    async def _run_reconnect_manager(self, name: str, manager: ReconnectManager) -> None:
+        """Run a reconnect manager."""
+        try:
+            await manager.monitor()
+        except asyncio.CancelledError:
+            logger.info("Reconnect manager %s cancelled", name)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.exception("Reconnect manager %s error: %s", name, exc)
+        finally:
+            await manager.stop()
 
     async def stop(self) -> None:
         """Stop all streams and the dispatcher."""
@@ -95,6 +120,13 @@ class StreamingManager:
 
         await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
+
+        # Stop all reconnect managers
+        for manager in self._reconnect_managers.values():
+            try:
+                await manager.stop()
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.exception("Error stopping reconnect manager: %s", exc)
 
         # Stop dispatcher
         await self._dispatcher.stop()
@@ -129,19 +161,23 @@ class StreamingManager:
             except Exception as exc:  # pylint: disable=broad-except
                 logger.exception("Error disconnecting stream %s: %s", name, exc)
 
-    async def health(self) -> Dict[str, bool]:
-        """Check health of all streams and dispatcher."""
+    async def health(self) -> Dict[str, Any]:
+        """Check health of all streams, dispatcher, and reconnect managers."""
         dispatcher_health = await self._dispatcher.health()
 
         stream_health = {}
         for name, stream in self._streams.items():
-            # Basic health check - stream is registered
-            stream_health[name] = name in self._streams
+            stream_health[name] = stream.is_connected
+
+        reconnect_health = {}
+        for name, manager in self._reconnect_managers.items():
+            reconnect_health[name] = await manager.health()
 
         return {
             "running": self._running,
             "dispatcher": dispatcher_health,
             "streams": stream_health,
+            "reconnect_managers": reconnect_health,
             "subscribers": len(self._subscribers),
         }
 
