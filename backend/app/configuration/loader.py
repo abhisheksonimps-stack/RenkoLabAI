@@ -25,9 +25,15 @@ class Settings(BaseSettings):
     redis_port: int = Field(default=6379)
     redis_db: int = Field(default=0)
 
-    jwt_secret: str = Field(default="replace-with-secure-secret")
+    jwt_secret: str = Field(default="replace-with-secure-secret-32bytes-minimum")
     jwt_algorithm: str = Field(default="HS256")
     jwt_expiration_seconds: int = Field(default=3600)
+    admin_username: str = Field(default="admin")
+    admin_password: str = Field(default="change-me-now")
+    broker_credentials_file: str = Field(default="data/broker_credentials.json")
+    trading_persistence_path: str = Field(default="data/trading")
+    allowed_cors_origins: str = Field(default="http://localhost:4173,http://localhost:3000")
+    otel_service_name: str = Field(default="renkolab-ai")
 
     class Config:
         env_file = os.getenv("ENV_FILE", ".env")

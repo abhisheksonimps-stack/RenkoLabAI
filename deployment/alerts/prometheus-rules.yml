@@ -1,0 +1,17 @@
+groups:
+  - name: renkolab-trading
+    rules:
+      - alert: RenkoLabRuntimeDown
+        expr: up{job="renkolab-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: RenkoLab backend is unavailable
+      - alert: RenkoLabOrderRejections
+        expr: increase(renkolab_orders_rejected_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: Orders rejected by risk or broker

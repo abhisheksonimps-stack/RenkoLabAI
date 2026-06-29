@@ -1,5 +1,20 @@
 # Deployment
 
-This directory contains infrastructure and deployment guidance for RenkoLab AI.
+Production deployment uses `Dockerfile.prod`, `docker-compose.prod.yml`, PostgreSQL, Redis, Nginx TLS termination, Prometheus metrics, and health/readiness endpoints.
 
-The application is designed to run in containers with PostgreSQL and Redis. Use `docker compose up --build` for local development and staging.
+Required environment values:
+
+- `JWT_SECRET`
+- `ADMIN_USERNAME`
+- `ADMIN_PASSWORD`
+- `DATABASE_*`
+- `REDIS_*`
+- Broker credentials through `BROKER_<EXCHANGE>_API_KEY`, `BROKER_<EXCHANGE>_SECRET`, and optional `BROKER_<EXCHANGE>_PASSWORD`.
+
+Run production stack:
+
+```bash
+docker compose -f docker-compose.prod.yml up --build
+```
+
+Nginx expects TLS material in `deployment/nginx/certs/fullchain.pem` and `deployment/nginx/certs/privkey.pem`.

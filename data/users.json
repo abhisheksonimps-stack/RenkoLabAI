@@ -1,0 +1,12 @@
+{
+  "admin": {
+    "created_at": "2026-06-29T16:41:48.583583",
+    "is_active": true,
+    "password_hash": "pbkdf2_sha256$260000$aba94a153546032f1a0985d5f126b5baac43cad89e922778fbdedd33b47f8136$1a848a564e77eb9cd930c68bf2799a15de78a30aad5964f68b471da84c08515c",
+    "permissions": [],
+    "roles": [
+      "admin"
+    ],
+    "username": "admin"
+  }
+}
