@@ -50,7 +50,7 @@ class StrategyEngine:
         self._record(result)
         return result
 
-    def process_brick(self, brick: Any) -> Signal:
+    def process_brick(self, brick: Any, context: StrategyContext | None = None) -> Signal:
         """Process one completed Renko brick and return its Signal.
 
         This method is the backtesting hot path. It uses Pydantic's
@@ -62,12 +62,13 @@ class StrategyEngine:
             self.start()
         self._strategy.on_brick(brick)
         signal = self._strategy.generate_signal()
-        context = self._context_from_brick(brick)
+        resolved_context = context
         if self._risk_manager.has_rules:
-            signal = self._risk_manager.evaluate(signal, context)
+            resolved_context = resolved_context or self._context_from_brick(brick)
+            signal = self._risk_manager.evaluate(signal, resolved_context)
         result = StrategyResult.model_construct(
             signal=signal,
-            context=context,
+            context=resolved_context,
             confidence=None,
             diagnostics={},
             created_at=datetime.now(UTC),

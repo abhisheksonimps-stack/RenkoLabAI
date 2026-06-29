@@ -30,6 +30,8 @@ from backend.app.trading.execution.position import TradeAttribution
 from backend.app.trading.portfolio.portfolio import EquityPoint, Portfolio
 from backend.app.trading.signals.models import SignalType
 from backend.app.trading.strategy.engine import StrategyEngine
+from backend.app.trading.strategy.interfaces import StrategyContext
+from backend.app.trading.strategy.risk import RiskManager
 from backend.app.trading.strategy.interfaces import Strategy
 
 
@@ -61,10 +63,12 @@ class BacktestEngine:
         fixed_quantity: Optional[float] = None,
         leverage: float = 1.0,
         force_close: bool = True,
+        risk_manager: Optional[RiskManager] = None,
     ) -> None:
         if attribution is None:
             attribution = TradeAttribution(strategy_name=getattr(strategy, "name", "unknown"))
-        self._strategy_engine = StrategyEngine(strategy)
+        self._risk_manager = risk_manager
+        self._strategy_engine = StrategyEngine(strategy, risk_manager=risk_manager)
         self._executor = executor or SimulatedExecutor(slippage=slippage, brokerage=brokerage)
         self.portfolio = Portfolio(starting_capital, attribution=attribution, leverage=leverage)
         self._position_fraction = float(position_fraction)
@@ -104,6 +108,22 @@ class BacktestEngine:
         # SELL (no shorting in T2), or signals with no actionable position change.
         return None
 
+    def _strategy_context(self, brick: Any) -> StrategyContext:
+        return StrategyContext.model_construct(
+            symbol=str((getattr(brick, "metadata", {}) or {}).get("symbol", "UNKNOWN")),
+            timestamp=brick.created_at,
+            configuration=None,
+            market_data=None,
+            brick=brick,
+            tick=None,
+            current_price=float(brick.close_price),
+            cash=self.portfolio.cash,
+            equity=self.portfolio.equity(float(brick.close_price)),
+            position_quantity=self.portfolio.position.quantity if self.portfolio.position.is_open else 0.0,
+            open_positions=1 if self.portfolio.position.is_open else 0,
+            metadata={"daily_pnl": self.portfolio.position.realized_pnl},
+        )
+
     def _execute(self, order: Order, brick: Any, bar_index: int) -> None:
         self._executor.execute(order, reference_price=float(brick.close_price), timestamp=brick.created_at)
         self.portfolio.apply_order(order, bar_index)
@@ -123,7 +143,10 @@ class BacktestEngine:
             # 2. Mark equity at this brick's close.
             self.portfolio.mark(brick.created_at, float(brick.close_price))
             # 3. Strategy consumes the brick; derive the next order (executes next brick).
-            signal = self._strategy_engine.process_brick(brick)
+            if self._risk_manager is not None and self._risk_manager.has_rules:
+                signal = self._strategy_engine.process_brick(brick, self._strategy_context(brick))
+            else:
+                signal = self._strategy_engine.process_brick(brick)
             pending = self._order_from_signal(signal.type, brick)
             last_index = index
             last_brick = brick
