@@ -52,6 +52,11 @@ class MockStream(MarketDataStream):
 
         return _events()
 
+    @property
+    def is_connected(self) -> bool:
+        """Check if stream is connected."""
+        return self._connected
+
 
 class MockSubscriber(MarketDataSubscriber):
     """Mock subscriber for testing."""
